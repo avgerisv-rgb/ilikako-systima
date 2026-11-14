@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Το Ηλιακό μας Σύστημα - Αστέρια</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+        
+        body, html {
+            margin: 0; 
+            padding: 0; 
+            width: 100%; 
+            height: 100%;
+            background-color: #020205; 
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            display: flex; 
+            justify-content: center; 
+            align-items: center;
+        }
+
+        /* Container που κλειδώνει αυστηρά την αναλογία 16:9 */
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            max-width: 177.78vh; /* 16/9 = 1.7778 */
+            max-height: 56.25vw; /* 9/16 = 0.5625 */
+            background: radial-gradient(circle at center, #0a0e1c 0%, #000000 100%);
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Ενημερωτικό Πλαίσιο στην Κορυφή */
+        #info-panel {
+            position: absolute;
+            top: 4%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 20, 35, 0.85);
+            color: #ffffff;
+            padding: 15px 35px;
+            border-radius: 50px;
+            font-size: 1.2vw;
+            font-weight: 400;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            pointer-events: none; /* Να μην εμποδίζει τα κλικ */
+            white-space: nowrap;
+            z-index: 10;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        /* Κουμπί Επιστροφής */
+        #backBtn {
+            position: absolute;
+            bottom: 8%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.2);
+            padding: 15px 45px;
+            font-size: 1.4vw;
+            font-weight: 600;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 10px 25px rgba(42, 82, 152, 0.5);
+            transition: all 0.3s ease;
+            display: none; /* Κρυφό αρχικά */
+            z-index: 10;
+        }
+
+        #backBtn:hover {
+            transform: translateX(-50%) scale(1.05);
+            box-shadow: 0 15px 35px rgba(42, 82, 152, 0.8);
+            background: linear-gradient(135deg, #234785, #315fb0);
+        }
+
+        #backBtn:active {
+            transform: translateX(-50%) scale(0.95);
+        }
+        
+        /* Κουμπί Μουσικής */
+        #audioControls { position: absolute; bottom: 4%; left: 3%; display: flex; gap: 10px; z-index: 10; }
+        #musicBtn, #sunBtn {
+            background: rgba(15, 20, 35, 0.85);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 10px 24px;
+            font-family: inherit;
+            font-size: 1.1vw;
+            font-weight: 600;
+            border-radius: 50px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: background 0.3s ease, box-shadow 0.3s ease;
+            z-index: 10;
+        }
+        #musicBtn:hover, #sunBtn:hover { background: rgba(35, 55, 100, 0.9); }
+        #musicBtn.on { box-shadow: 0 0 18px rgba(120, 170, 255, 0.55); border-color: rgba(150, 190, 255, 0.6); }
+
+        /* Fallbacks για μικρότερες οθόνες (Tablet/Κινητά) */
+        @media (max-width: 768px) {
+            #info-panel { font-size: 2.5vw; padding: 10px 20px; white-space: normal; width: 80%; }
+            #backBtn { font-size: 3.5vw; padding: 12px 30px; }
+            #musicBtn, #sunBtn { font-size: 2.6vw; padding: 8px 18px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container">
+        <div id="info-panel">Το Ηλιακό μας Σύστημα & τα Αστέρια - Κάντε κλικ σε ένα μικρό αστέρι στον ουρανό για να ταξιδέψετε κοντά του.</div>
+        <canvas id="skyCanvas"></canvas>
+        <button id="backBtn">Επιστροφή στη Γη</button>
+        <div id="audioControls">
+            <button id="musicBtn" aria-pressed="false">♪ Έναρξη μουσικής</button>
+            <button id="sunBtn" style="display:none">☀ Επαναφορά Ήλιου</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('skyCanvas');
+        const ctx = canvas.getContext('2d');
+        const backBtn = document.getElementById('backBtn');
+
+        // Κλείδωμα εσωτερικής ανάλυσης του Καμβά σε 1920x1080
+        const WIDTH = 1920;
+        const HEIGHT = 1080;
+        canvas.width = WIDTH;
+        canvas.height = HEIGHT;
+
+        // ===================== ΜΟΤΙΒΟ ΜΕΓΕΘΩΝ ΚΑΙ ΧΡΩΜΑΤΩΝ =====================
+        // Όλα τα αστέρια μοιάζουν με τον Ήλιο· αλλάζει μόνο το μέγεθος και το χρώμα. (core/mid/out: χρώματα λάμψης, dot: χρώμα κουκκίδας)
+        const C = {
+            yellow:    { core: '255,240,150', mid: '255,150,0',   out: '255,50,0',   dot: '255,244,214' }, // ο Ήλιος μας
+            orange:    { core: '255,225,170', mid: '255,140,40',  out: '200,60,0',   dot: '255,215,170' },
+            redorange: { core: '255,200,160', mid: '255,90,40',   out: '170,20,0',   dot: '255,185,150' },
+            deepred:   { core: '255,170,140', mid: '255,60,30',   out: '130,0,0',    dot: '255,165,135' },
+            white:     { core: '255,255,255', mid: '200,220,255', out: '120,150,255', dot: '240,245,255' },
+            lightblue: { core: '210,230,255', mid: '110,160,255', out: '40,80,255',  dot: '190,215,255' },
+            blue:      { core: '200,225,255', mid: '70,130,255',  out: '20,50,255',  dot: '175,205,255' }
+        };
+        // Επίπεδα μεγέθους σε σχέση με τον Ήλιο [από, έως, χρώμα]: μικρό / μικρότερο / ακόμα πιο μικρό και μεγάλο / μεγαλύτερο / ακόμα πιο μεγάλο
+        const SIZE_TIERS = {
+            small: [[0.7, 0.85, 'orange'], [0.45, 0.6, 'redorange'], [0.25, 0.38, 'deepred']],
+            big:   [[1.2, 1.5, 'white'], [1.7, 2.0, 'lightblue'], [2.2, 2.5, 'blue']],
+            same:  [[1, 1, 'white'], [1, 1, 'orange'], [1, 1, 'lightblue']] // ισομεγέθη: ίδιο μέγεθος με τον Ήλιο, διαφορετικό χρώμα
+        };
+        // Σειρά ανά τριάδα επιλογών: πρώτα ισομεγέθες-μικρό-μεγάλο και μετά οι υπόλοιποι συνδυασμοί, κυκλικά
+        const PERMS = [['same', 'small', 'big'], ['small', 'same', 'big'], ['small', 'big', 'same'],
+                       ['same', 'big', 'small'], ['big', 'same', 'small'], ['big', 'small', 'same']];
+        let permIdx = 0, permPos = 0;
+        const bags = { small: [], big: [], same: [] };
+        function nextStyle() {
+            const g = PERMS[permIdx][permPos];
+            if (++permPos === 3) { permPos = 0; permIdx = (permIdx + 1) % PERMS.length; }
+            // «σακούλα» με τα 3 επίπεδα σε τυχαία σειρά: και τα τρία εμφανίζονται πριν επαναληφθεί κάποιο
+            if (!bags[g].length) bags[g] = [0, 1, 2].sort(() => Math.random() - 0.5);
+            const [a, b, c] = SIZE_TIERS[g][bags[g].pop()];
+            return { size: a + Math.random() * (b - a), T: C[c] };
+        }
+
+        // Σταθερές παραμέτροι Ήλιου 
+        const refRadius = HEIGHT * 0.16; // Το μέγεθος του Ήλιου μας
+        const sunX = WIDTH * 0.25;       // Στο 25% της οθόνης (Αριστερά)
+        const sunY = HEIGHT / 2;
+        // Ο Ήλιος μπορεί να απομακρυνθεί και να γίνει μακρινό αστέρι (κουκκίδα) σαν τα υπόλοιπα
+        const sunStar = { x: sunX, y: sunY, baseRadius: 1.8, k: 0.25, color: 'rgba(255, 244, 214, 0.95)', isSun: true };
+        let sunIsStar = false, sunProg = 0, sunBtnShown = false;
+        const sunBtn = document.getElementById('sunBtn');
+        // Κουμπί «Επαναφορά Ήλιου»: η κουκκίδα μεγαλώνει ξανά και γίνεται ο Ήλιος στην αρχική του θέση
+        sunBtn.addEventListener('click', () => {
+            if (animState !== 'IDLE' || !sunIsStar) return;
+            const i = stars.indexOf(sunStar);
+            if (i >= 0) stars.splice(i, 1);
+            sunIsStar = false; sunProg = 1;
+            animState = 'SUN_RETURNING';
+            playZoomSound(true);
+            duckMusic(4500);
+        });         // Στη μέση κάθετα
+
+        // Δημιουργία 800 τυχαίων αστεριών
+        let stars = [];
+        for (let i = 0; i < 800; i++) {
+            stars.push({
+                x: Math.random() * WIDTH,
+                y: Math.random() * HEIGHT,
+                baseRadius: Math.random() * 1.5 + 0.5,
+                k: 0.05 + Math.random() * 0.4, // βάθος: πόσο γρήγορα απομακρύνεται κατά το ταξίδι
+                color: `rgba(255, 255, 255, ${Math.random() * 0.8 + 0.2})`
+            });
+        }
+
+        // Σύστημα Κάμερας (αρχικά κεντραρισμένη, zoom 1x)
+        let camera = {
+            x: WIDTH / 2,
+            y: HEIGHT / 2,
+            zoom: 1,
+            startX: WIDTH / 2,
+            startY: HEIGHT / 2,
+            startZoom: 1,
+            targetX: WIDTH / 2,
+            targetY: HEIGHT / 2,
+            targetZoom: 1
+        };
+
+        // Μηχανισμός Animation
+        let animState = 'IDLE'; // 'IDLE', 'ZOOMING_IN', 'ZOOMED', 'ZOOMING_OUT'
+        let animProgress = 0;   // 0.0 έως 1.0
+        let targetStar = null;
+        let lastTime = 0;
+        let focus = { sx0: 0, sy0: 0, sx1: WIDTH * 0.75, sy1: HEIGHT / 2 }; // διαδρομή του στόχου στην οθόνη
+        let prevLnZoom = 0;
+
+        // ===================== ΗΧΟΣ =====================
+        let audioCtx = null, noiseBuffer = null;
+        const musicBtn = document.getElementById('musicBtn');
+
+        // Οι browsers επιτρέπουν ήχο μόνο μετά από κλικ του χρήστη
+        function ensureAudio() {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                return audioCtx;
+            } catch (e) { return null; }
+        }
+
+        // --- Εφέ zoom (whoosh) ---
+        function playZoomSound(zoomIn) {
+            try {
+                const ac = ensureAudio(); if (!ac) return;
+                const now = ac.currentTime;
+                const dur = zoomIn ? 4.5 : 3.5; // ίδια διάρκεια με το animation
+
+                if (!noiseBuffer) {
+                    noiseBuffer = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+                    const d = noiseBuffer.getChannelData(0);
+                    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+                }
+
+                // Γενική ένταση: σιγανό κρεσέντο προς τη μέγιστη ταχύτητα και σβήσιμο
+                const master = ac.createGain();
+                master.gain.setValueAtTime(0.0001, now);
+                master.gain.linearRampToValueAtTime(0.14, now + dur * 0.45);
+                master.gain.linearRampToValueAtTime(0.0001, now + dur);
+                master.connect(ac.destination);
+
+                // «Whoosh»: φιλτραρισμένος θόρυβος, η συχνότητα ανεβαίνει στο zoom in και πέφτει στο zoom out
+                const noise = ac.createBufferSource();
+                noise.buffer = noiseBuffer; noise.loop = true;
+                const bp = ac.createBiquadFilter();
+                bp.type = 'bandpass'; bp.Q.value = 0.8;
+                bp.frequency.setValueAtTime(zoomIn ? 200 : 1800, now);
+                bp.frequency.exponentialRampToValueAtTime(zoomIn ? 1800 : 200, now + dur);
+                noise.connect(bp); bp.connect(master);
+                noise.start(now); noise.stop(now + dur + 0.1);
+
+                // Χαμηλός τόνος που δίνει βάθος
+                const osc = ac.createOscillator(), og = ac.createGain();
+                osc.type = 'sine'; og.gain.value = 0.35;
+                osc.frequency.setValueAtTime(zoomIn ? 60 : 160, now);
+                osc.frequency.exponentialRampToValueAtTime(zoomIn ? 160 : 60, now + dur);
+                osc.connect(og); og.connect(master);
+                osc.start(now); osc.stop(now + dur + 0.1);
+            } catch (e) { /* αν ο ήχος δεν υποστηρίζεται, το animation συνεχίζει κανονικά */ }
+        }
+
+        // --- Μουσική υπόβαθρο: πρωτότυπη σύνθεση, διαστημική ατμόσφαιρα με όργανο εκκλησίας ---
+        // Αργές συγχορδίες (pad τύπου εκκλησιαστικού οργάνου) + μπάσο + αρπίσματα που χτίζονται σταδιακά.
+        const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+        const CHORDS = [
+            { bass: 38, tones: [50, 53, 57, 62, 64, 69] }, // Ρε ελάσσονα (add9)
+            { bass: 34, tones: [46, 53, 57, 62, 65, 69] }, // Σι♭ maj7
+            { bass: 41, tones: [53, 57, 60, 65, 67, 72] }, // Φα (add9)
+            { bass: 36, tones: [48, 55, 60, 62, 64, 67] }  // Ντο (add9)
+        ];
+        const ARP_CELL = [0, 2, 4, 2, 5, 4, 3, 1];  // μοτίβο αρπίσματος (θέσεις μέσα στη συγχορδία)
+        const STEP = 0.3;                           // διάρκεια κάθε νότας του αρπίσματος (δευτ.)
+        const STEPS_PER_CHORD = 32;
+        const CHORD_DUR = STEP * STEPS_PER_CHORD;   // 9.6 δευτ. ανά συγχορδία
+        let music = null, reverbIR = null;
+
+        function makeImpulse(ac) { // συνθετική «αντήχηση καθεδρικού»
+            const len = ac.sampleRate * 5, buf = ac.createBuffer(2, len, ac.sampleRate);
+            for (let c = 0; c < 2; c++) {
+                const d = buf.getChannelData(c);
+                for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+            }
+            return buf;
+        }
+
+        function playPad(m, chord, t, build) {
+            const ac = m.ac, dur = CHORD_DUR + 3;
+            const lp = ac.createBiquadFilter();
+            lp.type = 'lowpass'; lp.frequency.value = 500 + 1800 * build; // φωτεινότερος ήχος όσο χτίζεται
+            lp.connect(m.bus);
+            const env = ac.createGain();
+            env.gain.setValueAtTime(0.0001, t);
+            env.gain.linearRampToValueAtTime(1, t + 2.5);
+            env.gain.setValueAtTime(1, t + CHORD_DUR);
+            env.gain.linearRampToValueAtTime(0.0001, t + dur); // επικάλυψη με την επόμενη συγχορδία
+            env.connect(lp);
+            const voices = [[chord.bass, 0.16, 'sine'], [chord.bass + 12, 0.07, 'triangle']]
+                .concat(chord.tones.map(n => [n, 0.04, 'triangle']));
+            voices.forEach(([note, g, type]) => {
+                const o = ac.createOscillator(), o2 = ac.createOscillator();
+                const vg = ac.createGain(), vg2 = ac.createGain();
+                o.type = type; o.frequency.value = mtof(note); o.detune.value = Math.random() * 10 - 5;
+                o2.type = 'sine'; o2.frequency.value = mtof(note) * 2; // ανώτερο αρμονικό → χροιά οργάνου
+                vg.gain.value = g; vg2.gain.value = g * 0.35;
+                o.connect(vg); o2.connect(vg2); vg.connect(env); vg2.connect(env);
+                o.start(t); o2.start(t); o.stop(t + dur + 0.1); o2.stop(t + dur + 0.1);
+            });
+        }
+
+        function playPluck(m, f, t, lvl) {
+            const ac = m.ac;
+            const o = ac.createOscillator(), o2 = ac.createOscillator();
+            const g = ac.createGain(), g2 = ac.createGain(), lp = ac.createBiquadFilter();
+            o.type = 'triangle'; o.frequency.value = f;
+            o2.type = 'sine'; o2.frequency.value = f * 2; g2.gain.value = 0.3;
+            lp.type = 'lowpass'; lp.frequency.value = 2600;
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.linearRampToValueAtTime(0.07 * lvl, t + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+            o.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g);
+            g.connect(m.bus); g.connect(m.dly); // στεγνός ήχος + ηχώ
+            o.start(t); o2.start(t); o.stop(t + 1.2); o2.stop(t + 1.2);
+        }
+
+        function scheduleMusic() {
+            const m = music; if (!m) return;
+            while (m.nextTime < m.ac.currentTime + 0.6) {
+                const n = m.step, chordNo = Math.floor(n / STEPS_PER_CHORD), s = n % STEPS_PER_CHORD;
+                const chord = CHORDS[chordNo % CHORDS.length], t = m.nextTime;
+                const build = Math.min(1, chordNo / 8); // σταδιακό «χτίσιμο» ως τη 8η συγχορδία
+                if (s === 0) playPad(m, chord, t, build);
+                if (chordNo >= 1) { // τα αρπίσματα μπαίνουν από τη 2η συγχορδία
+                    const lvl = (0.25 + 0.75 * build) * (s % 8 === 0 ? 1 : 0.65);
+                    playPluck(m, mtof(chord.tones[ARP_CELL[s % ARP_CELL.length]] + 12), t, lvl);
+                }
+                m.nextTime += STEP; m.step++;
+            }
+        }
+
+        function startMusic() {
+            const ac = ensureAudio(); if (!ac) return;
+            const now = ac.currentTime;
+            const out = ac.createGain(), duck = ac.createGain(), bus = ac.createGain();
+            out.gain.setValueAtTime(0.0001, now);
+            out.gain.linearRampToValueAtTime(0.8, now + 4); // απαλή είσοδος
+            out.connect(duck); duck.connect(ac.destination); bus.connect(out);
+            const conv = ac.createConvolver(), wet = ac.createGain();
+            conv.buffer = reverbIR || (reverbIR = makeImpulse(ac));
+            wet.gain.value = 0.55;
+            bus.connect(conv); conv.connect(wet); wet.connect(out);
+            const dly = ac.createDelay(1.5), fb = ac.createGain();
+            dly.delayTime.value = STEP * 3; fb.gain.value = 0.38;
+            dly.connect(fb); fb.connect(dly); dly.connect(bus);
+            music = { ac, out, duck, bus, dly, step: 0, nextTime: now + 0.2, timer: null };
+            music.timer = setInterval(scheduleMusic, 150);
+            scheduleMusic();
+        }
+
+        function stopMusic() {
+            const m = music; if (!m) return;
+            music = null;
+            clearInterval(m.timer);
+            const now = m.ac.currentTime;
+            m.out.gain.cancelScheduledValues(now);
+            m.out.gain.setValueAtTime(m.out.gain.value, now);
+            m.out.gain.linearRampToValueAtTime(0.0001, now + 1.5); // απαλό σβήσιμο
+            setTimeout(() => m.duck.disconnect(), 1700);
+        }
+
+        // Η μουσική χαμηλώνει όσο διαρκεί το zoom, για να ακούγεται το εφέ
+        function duckMusic(ms) {
+            const m = music; if (!m) return;
+            m.duck.gain.setTargetAtTime(0.45, m.ac.currentTime, 0.4);
+            setTimeout(() => { if (music === m) m.duck.gain.setTargetAtTime(1, m.ac.currentTime, 1.2); }, ms);
+        }
+
+        musicBtn.addEventListener('click', () => {
+            if (music) stopMusic(); else startMusic();
+            musicBtn.classList.toggle('on', !!music);
+            musicBtn.setAttribute('aria-pressed', String(!!music));
+            musicBtn.textContent = music ? '♪ Παύση μουσικής' : '♪ Έναρξη μουσικής';
+        });
+
+        // Συνάρτηση Γραμμικής Παρεμβολής (Lerp)
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+
+        // Συνάρτηση Easing (Cubic Ease-In-Out) για ομαλή κίνηση
+        function easeInOut(t) {
+            return t * t * t * (t * (6 * t - 15) + 10); // smootherstep
+        }
+
+        // Εύρεση του κοντινότερου αστεριού στο σημείο του κλικ
+        function findNearestStar(wx, wy) {
+            let nearest = null;
+            let minDist = 30; // Ανοχή στο κλικ (σε παγκόσμιες συντεταγμένες)
+            for (let star of stars) {
+                let dx = star.x - wx;
+                let dy = star.y - wy;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = star;
+                }
+            }
+            return nearest;
+        }
+
+        // Συνάρτηση Ζωγραφικής Ήλιου (με φλεγόμενο Gradient και Κείμενο)
+        function drawSun(ctx, x, y, radius, time, opacity, label, T = C.yellow, fullR = refRadius) {
+            if (opacity <= 0) return; // Εξοικονόμηση πόρων
+            
+            ctx.save();
+            ctx.globalAlpha = opacity;
+            
+            // Παλμός λάμψης
+            let pulse = Math.sin(time * 0.003) * 0.05 + 1; 
+            let currentRadius = radius * pulse;
+            
+            // Το φωτοστέφανο (Glow)
+            let grad = ctx.createRadialGradient(x, y, currentRadius * 0.2, x, y, currentRadius * 1.6);
+            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            grad.addColorStop(0.1, `rgba(${T.core}, 1)`);
+            grad.addColorStop(0.3, `rgba(${T.mid}, 0.8)`);
+            grad.addColorStop(0.6, `rgba(${T.out}, 0.3)`);
+            grad.addColorStop(1, `rgba(${T.out}, 0)`);
+            
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, currentRadius * 1.6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Ο πυρήνας
+            ctx.fillStyle = '#FFF8E7';
+            ctx.beginPath();
+            ctx.arc(x, y, radius * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Ετικέτα
+            ctx.fillStyle = 'white';
+            ctx.font = '28px "Inter", sans-serif';
+            ctx.globalAlpha = opacity * Math.max(0, Math.min(1, (radius / fullR - 0.6) / 0.4));
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.shadowColor = 'black';
+            ctx.shadowBlur = 5;
+            ctx.fillText(label, x, Math.min(y + radius * 1.7, HEIGHT - 70));
+            
+            ctx.restore();
+        }
+
+        // Βασικός Βρόχος (Render Loop)
+        function animate(time) {
+            let dt = time - lastTime;
+            lastTime = time;
+            if (dt > 100) dt = 16; // Αποφυγή μεγάλων αλμάτων χρόνου
+
+            // Διαχείριση Προόδου Animation
+            if (animState === 'ZOOMING_IN') {
+                animProgress += dt / 4500; // Διάρκεια: 2.5 δευτερόλεπτα
+                if (animProgress >= 1) {
+                    animProgress = 1;
+                    animState = 'ZOOMED';
+                    backBtn.style.display = 'block';
+                }
+            } else if (animState === 'ZOOMING_OUT') {
+                animProgress -= dt / 3500; // Διάρκεια επιστροφής: 2.0 δευτερόλεπτα
+                if (animProgress <= 0) {
+                    animProgress = 0;
+                    animState = 'IDLE';
+                    targetStar = null;
+                    // Ακριβής επαναφορά στην αρχική θέση της κάμερας
+                    camera.x = WIDTH / 2;
+                    camera.y = HEIGHT / 2;
+                    camera.zoom = 1;
+                }
+            }
+
+            // Ο Ήλιος απομακρύνεται και γίνεται αστέρι
+            if (animState === 'SUN_RECEDING') {
+                sunProg += dt / 3500;
+                if (sunProg >= 1) {
+                    sunProg = 0; animState = 'IDLE';
+                    sunIsStar = true; stars.push(sunStar); // πλέον είναι ένα από τα αστέρια
+                }
+            }
+
+            if (animState === 'SUN_RETURNING') {
+                sunProg -= dt / 4500; // αντίστροφη πορεία της απομάκρυνσης
+                if (sunProg <= 0) { sunProg = 0; animState = 'IDLE'; }
+            }
+            // Το κουμπί φαίνεται μόνο όταν ο Ήλιος είναι αστέρι και δεν τρέχει κίνηση
+            const showSunBtn = sunIsStar && animState === 'IDLE';
+            if (showSunBtn !== sunBtnShown) {
+                sunBtnShown = showSunBtn;
+                sunBtn.style.display = showSunBtn ? 'block' : 'none';
+            }
+
+            // Υπολογισμός θέσης κάμερας
+            const tz = easeInOut(animProgress);                    // πρόοδος zoom
+            const tp = easeInOut(Math.min(1, animProgress / 0.6)); // κεντράρισμα: προηγείται του zoom
+            const lnZ = tz * Math.log(camera.targetZoom);
+            camera.zoom = Math.exp(lnZ);
+            const dLn = (lnZ - prevLnZoom) / Math.max(dt, 1) * 70; // ρυθμός zoom → μήκος motion blur
+            prevLnZoom = lnZ;
+            const fx = lerp(focus.sx0, focus.sx1, tp);             // θέση στόχου στην οθόνη
+            const fy = lerp(focus.sy0, focus.sy1, tp);
+
+            // 1. Καθαρισμός Οθόνης
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+            // 2. Ζωγραφική του φόντου των αστεριών
+            for (let star of stars) {
+                // Δεν ζωγραφίζουμε το επιλεγμένο αστέρι εδώ όταν κάνει ζουμ (το διαχειριζόμαστε παρακάτω)
+                if (targetStar === star && animState !== 'IDLE') continue;
+                
+                let screenX = star.x, screenY = star.y, screenRadius = star.baseRadius, sLen = 0, px = 0, py = 0;
+                if (targetStar && animState !== 'IDLE') {
+                    // Τα αστέρια ρέουν ακτινωτά από τον στόχο· τα κοντινότερα (μεγάλο k) πιο γρήγορα
+                    const e = Math.exp(star.k * lnZ);
+                    screenX = fx + (star.x - targetStar.x) * e;
+                    screenY = fy + (star.y - targetStar.y) * e;
+                    screenRadius = star.baseRadius * Math.pow(e, 0.3);
+                    const f = Math.exp(-star.k * dLn);
+                    px = fx + (screenX - fx) * f;
+                    py = fy + (screenY - fy) * f;
+                    sLen = Math.hypot(screenX - px, screenY - py);
+                }
+                
+                // Culling: Αν είναι εκτός οθόνης, μην το ζωγραφίζεις
+                if (screenX + screenRadius < 0 || screenX - screenRadius > WIDTH ||
+                    screenY + screenRadius < 0 || screenY - screenRadius > HEIGHT) {
+                    continue;
+                }
+                
+                ctx.fillStyle = star.color;
+                ctx.strokeStyle = star.color;
+                if (sLen > 1.5) { // motion blur στις υψηλές ταχύτητες
+                    ctx.lineWidth = Math.max(1, screenRadius * 1.6);
+                    ctx.lineCap = 'round';
+                    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(screenX, screenY); ctx.stroke();
+                } else {
+                    ctx.beginPath(); ctx.arc(screenX, screenY, screenRadius, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+
+            // 3. Ζωγραφική του Μακρινού Αστεριού (Crossfade effect)
+            if (targetStar && animState !== 'IDLE') {
+                let screenX = fx;
+                let screenY = fy;
+                let screenRadius = targetStar.baseRadius * camera.zoom;
+                
+                // Crossfade λογική
+                let sunOpacity = Math.min(1, Math.max(0, (tz - 0.02) / 0.3));
+                let dotOpacity = Math.max(0, 1 - tz * 4);
+
+                // Bloom: από μακριά φωτεινό σημείο με λάμψη, ο δίσκος αναδύεται σταδιακά
+                const bloomA = 0.6 * Math.sin(Math.PI * tz);
+                if (bloomA > 0.01) {
+                    const bR = 8 + screenRadius * 2.2;
+                    const bg = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, bR);
+                    bg.addColorStop(0, `rgba(${targetStar.type.core}, ${bloomA})`);
+                    bg.addColorStop(0.35, `rgba(${targetStar.type.mid}, ${bloomA * 0.35})`);
+                    bg.addColorStop(1, `rgba(${targetStar.type.out}, 0)`);
+                    ctx.fillStyle = bg;
+                    ctx.beginPath(); ctx.arc(screenX, screenY, bR, 0, Math.PI * 2); ctx.fill();
+                }
+                
+                if (animState === 'ZOOMED') {
+                    sunOpacity = 1;
+                    dotOpacity = 0;
+                }
+
+                // Σχεδίαση της αρχικής λευκής κουκκίδας που σβήνει
+                if (dotOpacity > 0) {
+                    ctx.globalAlpha = dotOpacity;
+                    ctx.fillStyle = targetStar.color;
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, screenRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+                
+                // Σχεδίαση του φλεγόμενου Ήλιου που εμφανίζεται
+                drawSun(ctx, screenX, screenY, screenRadius, time, sunOpacity, (targetStar.isSun ? "Ο Ήλιος μας" : "Μακρινό Αστέρι"), targetStar.type, refRadius * targetStar.size);
+            }
+
+            // 4. Ζωγραφική «Του Δικού μας Ήλιου» (Μόνιμα δεξιά - HUD layer)
+            if (animState === 'SUN_RECEDING' || animState === 'SUN_RETURNING') {
+                // Σμίκρυνση (εκθετική) → ο Ήλιος γίνεται κουκκίδα, με το ίδιο crossfade όπως στο zoom
+                const e = easeInOut(sunProg), tzs = 1 - e;
+                const r = refRadius * Math.pow(sunStar.baseRadius / refRadius, e);
+                const sunOp = Math.min(1, Math.max(0, (tzs - 0.02) / 0.3));
+                const dotOp = Math.max(0, 1 - tzs * 4);
+                const bloomA = 0.6 * Math.sin(Math.PI * tzs);
+                if (bloomA > 0.01) {
+                    const bR = 8 + r * 2.2;
+                    const bg = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, bR);
+                    bg.addColorStop(0, `rgba(255, 240, 200, ${bloomA})`);
+                    bg.addColorStop(0.35, `rgba(255, 190, 110, ${bloomA * 0.35})`);
+                    bg.addColorStop(1, 'rgba(255, 150, 60, 0)');
+                    ctx.fillStyle = bg;
+                    ctx.beginPath(); ctx.arc(sunX, sunY, bR, 0, Math.PI * 2); ctx.fill();
+                }
+                if (dotOp > 0) {
+                    ctx.globalAlpha = dotOp;
+                    ctx.fillStyle = sunStar.color;
+                    ctx.beginPath(); ctx.arc(sunX, sunY, r, 0, Math.PI * 2); ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+                drawSun(ctx, sunX, sunY, r, time, sunOp, "Ο Ήλιος μας");
+            } else if (!sunIsStar) {
+                drawSun(ctx, sunX, sunY, refRadius, time, 1, "Ο Ήλιος μας");
+            }
+
+            requestAnimationFrame(animate);
+        }
+        
+        // Εκκίνηση του Loop
+        requestAnimationFrame(animate);
+
+        // Διαχείριση Κλικ σε Αστέρι
+        canvas.addEventListener('click', (e) => {
+            if (animState !== 'IDLE') return; // Αποτροπή κλικ κατά την κίνηση
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = WIDTH / rect.width;
+            const scaleY = HEIGHT / rect.height;
+            
+            // Μετατροπή κλικ οθόνης σε συντεταγμένες Canvas
+            let clickScreenX = (e.clientX - rect.left) * scaleX;
+            let clickScreenY = (e.clientY - rect.top) * scaleY;
+            
+            // Μετατροπή Canvas σε Παγκόσμιες συντεταγμένες
+            let clickWorldX = (clickScreenX - WIDTH / 2) / camera.zoom + camera.x;
+            let clickWorldY = (clickScreenY - HEIGHT / 2) / camera.zoom + camera.y;
+
+            // Κλικ στον Ήλιο: απομακρύνεται και γίνεται μακρινό αστέρι
+            if (!sunIsStar && Math.hypot(clickWorldX - sunX, clickWorldY - sunY) < refRadius * 1.3) {
+                sunProg = 0;
+                animState = 'SUN_RECEDING';
+                playZoomSound(false);
+                duckMusic(3500);
+                return;
+            }
+
+            let selectedStar = findNearestStar(clickWorldX, clickWorldY);
+            
+            if (selectedStar) {
+                targetStar = selectedStar;
+                
+                // Αποθήκευση αρχικής κατάστασης
+                // Θέση του αστεριού στην οθόνη (κάμερα στην αρχική θέση) → στόχος: 75% δεξιά, κέντρο
+                focus.sx0 = targetStar.x; focus.sy0 = targetStar.y;
+                focus.sx1 = WIDTH * 0.75; focus.sy1 = HEIGHT / 2;
+                
+                // Υπολογισμός τελικής κατάστασης
+                // Θέλουμε η ακτίνα του αστεριού να φτάσει ακριβώς την ακτίνα του Ήλιου μας (refRadius)
+                // Μέγεθος και χρώμα σύμφωνα με το μοτίβο (ο Ήλιος κρατά το δικό του και δεν μετράει στο μοτίβο)
+                const stl = targetStar.isSun ? { size: 1, T: C.yellow } : nextStyle();
+                targetStar.size = stl.size; targetStar.type = stl.T;
+                if (!targetStar.isSun) { // η κουκκίδα παίρνει το χρώμα του αστεριού, με την ίδια διαφάνεια
+                    const m = /([\d.]+)\)\s*$/.exec(targetStar.color);
+                    targetStar.color = `rgba(${stl.T.dot}, ${m ? m[1] : 1})`;
+                }
+                camera.targetZoom = refRadius * targetStar.size / targetStar.baseRadius;
+                
+                // Θέλουμε το αστέρι να καταλήξει δεξιά, στο 75% του WIDTH
+                // screenX = (worldX - camera.targetX) * targetZoom + WIDTH / 2 = WIDTH * 0.75
+                // Το κεντράρισμα γίνεται μέσω του focus (βλ. animate)
+                
+                animState = 'ZOOMING_IN';
+                playZoomSound(true);
+                duckMusic(4500);
+            }
+        });
+
+        // Διαχείριση Κέρσορα (Μετατρέπεται σε χεράκι όταν περνάει πάνω από αστέρι)
+        canvas.addEventListener('mousemove', (e) => {
+            if (animState !== 'IDLE') {
+                canvas.style.cursor = 'default';
+                return;
+            }
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = WIDTH / rect.width;
+            const scaleY = HEIGHT / rect.height;
+            let screenX = (e.clientX - rect.left) * scaleX;
+            let screenY = (e.clientY - rect.top) * scaleY;
+            let worldX = (screenX - WIDTH / 2) / camera.zoom + camera.x;
+            let worldY = (screenY - HEIGHT / 2) / camera.zoom + camera.y;
+            
+            let hoverStar = findNearestStar(worldX, worldY);
+            const onSun = !sunIsStar && Math.hypot(worldX - sunX, worldY - sunY) < refRadius * 1.3;
+            canvas.style.cursor = (hoverStar || onSun) ? 'pointer' : 'default';
+        });
+
+        // Κουμπί Επιστροφής
+        backBtn.addEventListener('click', () => {
+            if (animState !== 'ZOOMED') return;
+            backBtn.style.display = 'none';
+
+            // ΔΕΝ αλλάζουμε τα start/target της κάμερας. Το animProgress πέφτει 1 → 0
+            // και η κάμερα ακολουθεί αντίστροφα ακριβώς την ίδια διαδρομή της εισόδου.
+            animState = 'ZOOMING_OUT';
+            playZoomSound(false);
+            duckMusic(3500);
+        });
+
+    </script>
+</body>
+</html>
